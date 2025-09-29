@@ -315,76 +315,10 @@ export class SqlOrderRepository implements OrderRepository {
 - **Secrets** : injectés via configuration, jamais dans le domaine.
 - **Validation** des entrées (schema validation) **avant** d’appeler un use-case.
 
-## 18) Checklist de revue
+## 18) exemple connu et open-source : JHipster Lite.
 
-- [ ] Le domaine n’importe aucun framework.
-- [ ] Les ports sont définis côté domaine/app.
-- [ ] Les adapters n’exposent pas de types techniques au domaine.
-- [ ] Transactions gérées au niveau application.
-- [ ] Tests unitaires couvrent les invariants métier.
-- [ ] Adapters sortants testés avec des contract tests.
-- [ ] Mappings explicites et testés.
-- [ ] Observabilité en place sur chaque adapter.
+- Le projet lui-même est codé en architecture hexagonale (et il génère des applis qui suivent la même approche). La doc et le dépôt officiel indiquent explicitement que le code est structuré en domaine / cas d’usage (ports) / adaptateurs, isolant les détails techniques du cœur métier.
 
-## 19) FAQ
-
-**Q : L’hexagonal impose-t-elle des microservices ?**
-
-- Non. Elle fonctionne en **monolithe modulaire** comme en microservices. Chaque contexte peut être un hexagone.
-
-**Q : Où placer les validations ?**
-
-- **Syntaxe/format** en adapter entrant ; **invariants** dans le domaine.
-
-**Q : Puis-je utiliser un ORM dans le domaine ?**
-
-- Non. L’ORM reste dans l’adapter persistance ; le domaine doit être **agnostique**.
-
-**Q : Est-ce compatible avec GraphQL/REST/GRPC ?**
-
-- Oui. Ce sont des **adapters entrants** interchangeables.
-
-## 20) Références utiles (pour aller plus loin)
-
-- Alistair Cockburn – "Hexagonal Architecture" (Ports & Adapters)
-- Eric Evans – "Domain-Driven Design"
-- Vernon – "Implementing Domain-Driven Design"
-- Blogs/Conf talks sur Clean Architecture, Onion, CQRS, Event Sourcing
-
----
-
-## 21) Modèle de gabarit (copier-coller)
-
-```
-src/
-  domain/
-    entities/
-    value-objects/
-    services/
-    events/
-    port/
-      in/
-      out/
-  application/
-    use-cases/
-    mappers/
-    policies/
-    transactions/
-  adapters/
-    in/
-      http/
-      messaging/
-      cli/
-    out/
-      persistence/
-      http/
-      cache/
-      events/
-  config/
-    di/
-    env/
-```
-
----
-
-**Conclusion** : En appliquant rigoureusement la séparation **domaine / ports / adapters**, vous obtenez un système **durable**, **testable** et **évolutif**. Adoptez une démarche incrémentale (Strangler), et sécurisez chaque frontière par des tests et des mappings explicites.
+- En pratique, dans JHipster Lite :
+  le domaine expose des ports (use cases) indépendants de toute techno, des adapters entrants (ex. REST/UI) pilotent ces cas d’usage,
+  des adapters sortants gèrent la persistance, la conf, etc., et sont remplaçables sans toucher au domaine. (Voir leur doc “the generated code uses Hexagonal Architecture”.)
