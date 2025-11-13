@@ -1,141 +1,165 @@
-# Architecture Hexagonale (Ports & Adapters)
+## Architecture Hexagonale (Ports & Adapters)
 
-> **Objectif** : fournir une documentation claire, complète et actionnable pour concevoir, implémenter, tester et faire évoluer une application selon l’architecture hexagonale.
+### 1. Définition simple
+
+L’architecture hexagonale (ou **Ports & Adapters**) est un style d’architecture qui organise l’application autour de son **cœur métier**, totalement indépendant de la base de données, de l’UI et des frameworks techniques.
+
+Toutes les interactions avec l’extérieur passent par des **ports** (contrats abstraits) que des **adaptateurs** implémentent pour parler à des technologies concrètes (HTTP, DB, message broker, etc.).  
+Résultat : un code métier **facile à tester**, **stable dans le temps** et des technologies **faciles à remplacer**.
 
 ---
 
-## 1) Vue d’ensemble
+### 2. Liste de caractéristiques
 
-L’**architecture hexagonale** (aussi appelée **Ports & Adapters**), formalisée par **Alistair Cockburn**, vise à **isoler le cœur métier** (domaine) des détails techniques (base de données, Web, CLI, message broker, etc.).
+- **Séparation stricte métier / technique**
 
-- **Le domaine** contient les **règles métier** et doit être **indépendant** de tout framework, UI, DB, réseau.
-- Les **ports** sont des **interfaces** qui décrivent **ce que** le domaine offre (ports sortants) ou **ce dont** il a besoin (ports entrants), sans exposer le **comment**.
-- Les **adapters** implémentent ces ports pour se brancher à des technologies concrètes (HTTP, SQL/NoSQL, Kafka, Email, Filesystem, etc.).
-- L’**inversion des dépendances** garantit que **les dépendances pointent vers le domaine**, jamais l’inverse.
+  - Le domaine ne dépend d’aucune librairie technique (framework web, ORM, driver, etc.).
+  - Le code métier reste “pur” : pas d’annotations de framework, pas de logique d’I/O.
 
-**Bénéfices clés** : testabilité élevée, séparation des préoccupations, remplaçabilité des technologies, longévité du code métier.
+- **Cœur de l’application = domaine**
 
-## 2) Concepts et vocabulaire
+  - Contient : Entités, Value Objects, règles métier, services de domaine.
+  - Encapsule les invariants métier et la logique de décision.
 
-- **Domaine** : modèles métier (Aggregates, Entities, Value Objects), règles, services de domaine.
-- **Application (Cas d’usage)** : orchestration de scénarios métier, transactions, sécurité d’accès, idempotence. Ne contient **pas** de logique métier complexe (plutôt du **workflow**).
-- **Port entrant** (Driving Port) : interface offerte par l’application/domaine pour déclencher un cas d’usage (ex. `CreateOrderUseCase`).
-- **Port sortant** (Driven Port) : interface dont le domaine a besoin pour interagir avec l’extérieur (ex. `OrderRepository`, `PaymentGateway`).
-- **Adapter entrant** : traduit des requêtes externes (REST/CLI/Message) en appels vers les ports entrants.
-- **Adapter sortant** : implémente les ports sortants en s’appuyant sur une technologie (JPA, HTTP client, S3, Redis…).
-- **Anticorruption Layer (ACL)** : protège le domaine d’un modèle externe (mapping/translation).
-- **DTO** : objets de transfert à la frontière ; éviter qu’ils contaminent le domaine.
-- **Mapper** : convertit DTO ⇄ Domain (et Domain ⇄ Persistence models).
+- **Ports & Adapters**
 
-## 3) Principes structurants
+  - **Ports entrants (driving ports)** : contrats pour déclencher un cas d’usage (ex. `CreateOrderUseCase`).
+  - **Ports sortants (driven ports)** : contrats dont le domaine / l’application ont besoin (ex. `OrderRepository`, `PaymentGateway`).
+  - **Adaptateurs entrants (primary adapters)** : HTTP controllers, CLI, UI, tests automatisés… ils appellent les ports entrants.
+  - **Adaptateurs sortants (secondary adapters)** : implémentations techniques des ports sortants (ORM, client HTTP, message broker, cache, etc.).
 
-1. **Indépendance du domaine** : pas de dépendances vers des libs techniques.
-2. **Dépendances dirigées vers l’intérieur** : adapters → ports → domain.
-3. **Interfaces au centre** : les ports sont définis côté domaine/application.
-4. **Remplaçabilité** : chaque adapter peut être substitué sans toucher au domaine.
-5. **Test d’abord** : tests unitaires du domaine **sans** infrastructure ; contract tests sur ports ; tests d’intégration sur adapters ; tests end-to-end sur le système.
+- **Inversion des dépendances**
 
-## 4) Schéma (ASCII)
+  - Les dépendances pointent **vers l’intérieur** :  
+    `adapters → ports → application/domaine`.
+  - Le domaine ne connaît ni les adaptateurs, ni les frameworks.
 
+- **Ports = contrats, pas juste des interfaces**
+
+  - Souvent modélisés par des `interface` (Java/TypeScript).
+  - Plus généralement : ce sont des **contrats/protocoles** (signature de méthodes, schémas de messages, etc.).
+
+- **Couches Domain / Application**
+
+  - **Domaine** : règles métier, invariants, modèles riches (Entities/VO), événements de domaine.
+  - **Application** : orchestration de cas d’usage, gestion de transactions, authZ (droits par cas d’usage), appels aux ports sortants.
+
+- **Tests comme adaptateurs entrants**
+
+  - Les tests automatisés pilotent l’application via les ports entrants.
+  - Facile de tester le domaine sans base de données ni serveur HTTP.
+
+- **Remplaçabilité des technologies**
+
+  - On peut changer :
+    - de DB (PostgreSQL → MongoDB),
+    - de protocole (REST → gRPC),
+    - de service externe (Stripe → autre PSP),
+  - en modifiant l’adapter sortant correspondant, sans toucher au domaine.
+
+- **Compatible DDD / Bounded Contexts**
+
+  - Souvent utilisé pour structurer un **bounded context** avec un domaine riche.
+  - Les échanges entre contexts ou systèmes externes se font via ports + adaptateurs, parfois avec **Anticorruption Layer (ACL)**.
+
+- **Composition root / câblage**
+  - Un endroit dédié (souvent `config/`) où l’on :
+    - crée les implémentations concrètes des ports,
+    - câble : `adapter entrant → port entrant → service d’application → port sortant → adapter sortant`,
+    - branche les frameworks (Spring, NestJS, FastAPI, etc.).
+
+---
+
+### 3. Exemple d’implémentation (schéma)
+
+#### Schéma conceptuel (ASCII)
+
+```text
+                 +----------- Adaptateurs entrants (HTTP/CLI/Tests) -----------+
+                 |                                                              |
+Client / Test -->|  Controller  -> RequestMapper -> Port entrant (UseCase)      |
+                 |                                 |                            |
+                 +---------------------------------|----------------------------+
+                                                   v
+                                          Application Service
+                                                   |
+                                           (orchestration,
+                                            transactions,
+                                            sécurité cas d’usage)
+                                                   |
+                                                   v
+                                                Domaine
+                                      (Entities / VOs / Rules)
+                                                   |
+                                                   v
+                                Port sortant (Repository, ExternalService)
+                                                   |
+                 +---------------------------------|----------------------------+
+                 |                       Adaptateurs sortants                   |
+                 |   ORM/JPA/SQL, REST client, Message broker, Cache, Email...  |
+                 +----------------------------------------------------------------
+
+---
+
+### 4. Exemples d’utilisation dans des projets connus
+
+#### JHipster Lite
+
+Générateur de projets Java (Spring Boot) utilisant explicitement l’architecture hexagonale.
+
+Structure le code en :
+
+- `domain` (métier)
+- `application` / use cases
+- `infrastructure` / adapters
+
+Les adaptateurs (REST, persistance, etc.) sont remplaçables sans impacter le domaine.
+
+---
+
+#### Templates Spring Boot “Hexagonal / Clean Architecture” (projets GitHub)
+
+De nombreux starters structurent un microservice comme :
+
+- `domain/`, `application/` (use cases, ports)
+- `infrastructure/` (adapters sortants)
+- `web/` ou `interface/` (adapters entrants REST)
+
+Utilisé pour des contextes variés : e-commerce, gestion de commandes, systèmes de réservation, etc.
+
+---
+
+#### Applications métiers avec DDD
+
+Dans des projets DDD (systèmes de facturation, banking, e-commerce, logistique…),
+l’architecture hexagonale est souvent utilisée pour :
+
+- isoler le modèle métier,
+- découpler la persistance,
+- connecter des services externes (paiement, email, ERP) via des ports sortants.
+
+---
+
+### 5. Sources (liens web)
+
+- Alistair Cockburn – “Hexagonal Architecture (Ports & Adapters)”
+  <https://alistair.cockburn.us/hexagonal-architecture>
+
+- Wikipédia – “Hexagonal architecture (software)”
+  <https://en.wikipedia.org/wiki/Hexagonal_architecture_(software)>
+
+- AWS Prescriptive Guidance – “Hexagonal architecture pattern”
+  <https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/hexagonal-architecture.html>
+
+- Octo Technology (FR) – “Architecture Hexagonale : trois principes et un exemple d’implémentation”
+  <https://blog.octo.com/architecture-hexagonale-trois-principes-et-un-exemple-dimplementation>
+
+- Scalastic – “Everything You Need to Know About Hexagonal Architecture”
+  <https://scalastic.io/en/hexagonal-architecture/>
+
+- JHipster Lite – Site officiel
+  <https://www.jhipster.tech/jhipster-lite/>
+
+- JHipster Lite – Dépôt GitHub
+  <https://github.com/jhipster/jhipster-lite/>
 ```
-            +------------------ Adapter entrant (HTTP/CLI/AMQP) ------------------+
-            |                                                                     |
-Client ---> |  Controller  ->  RequestMapper  ->  Port entrant (UseCase)          |
-            |                                     |                               |
-            +-------------------------------------|-------------------------------+
-                                                  v
-                                           Application Service
-                                                  |
-                                                  v
-                                               Domaine
-                                       (Entities / VOs / Rules)
-                                                  |
-                                                  v
-                             Port sortant (Repository, ExternalService)
-                                                  |
-            +-------------------------------------|-------------------------------+
-            |                                Adapter sortant                      |
-            |   ORM/JPA/SQL, REST client, Filesystem, Kafka, Email, Cache, etc.  |
-            +---------------------------------------------------------------------+
-```
-
-## 5) Organisation de projet (exemples)
-
-### 5.1 Java (Gradle/Maven)
-
-```
-com.company.project
-├─ domain
-│  ├─ model/ (Entity, ValueObject)
-│  ├─ service/ (Domain services)
-│  ├─ port/
-│  │  ├─ in/ (UseCase interfaces)
-│  │  └─ out/ (Repository, External ports)
-│  └─ event/ (Domain events)
-├─ application
-│  ├─ service/ (UseCase implementations)
-│  └─ mapper/ (DTO↔Domain)
-├─ adapters
-│  ├─ in/
-│  │  ├─ web/ (Controllers, request/response DTO)
-│  │  └─ messaging/ (Consumers, handlers)
-│  └─ out/
-│     ├─ persistence/ (JPA repos, DAOs, entities)
-│     ├─ http/ (clients)
-│     └─ cache/ (Redis, etc.)
-└─ config/ (DI, wiring)
-```
-
-### 5.2 Node.js (TypeScript)
-
-```
-src/
-├─ domain/
-│  ├─ entities/
-│  ├─ value-objects/
-│  ├─ services/
-│  └─ ports/
-│     ├─ in/
-│     └─ out/
-├─ application/
-│  ├─ use-cases/
-│  └─ mappers/
-├─ adapters/
-│  ├─ in/
-│  │  ├─ http/
-│  │  └─ messaging/
-│  └─ out/
-│     ├─ persistence/
-│     ├─ http/
-│     └─ cache/
-└─ config/
-```
-
-### 5.3 Python
-
-```
-project/
-├─ domain/
-│  ├─ models/
-│  ├─ services/
-│  └─ ports/
-├─ application/
-│  ├─ use_cases/
-│  └─ mappers/
-├─ adapters/
-│  ├─ in/
-│  │  ├─ fastapi/
-│  │  └─ cli/
-│  └─ out/
-│     ├─ sqlalchemy/
-│     └─ http/
-└─ config/
-```
-
-## 6) exemple connu et open-source : JHipster Lite.
-
-- Le projet lui-même est codé en architecture hexagonale (et il génère des applis qui suivent la même approche). La doc et le dépôt officiel indiquent explicitement que le code est structuré en domaine / cas d’usage (ports) / adaptateurs, isolant les détails techniques du cœur métier.
-
-- En pratique, dans JHipster Lite :
-  le domaine expose des ports (use cases) indépendants de toute techno, des adapters entrants (ex. REST/UI) pilotent ces cas d’usage,
-  des adapters sortants gèrent la persistance, la conf, etc., et sont remplaçables sans toucher au domaine. (Voir leur doc “the generated code uses Hexagonal Architecture”.)
